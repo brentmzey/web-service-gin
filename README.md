@@ -48,6 +48,7 @@ The service will be available at [http://localhost:8080](http://localhost:8080).
 - **Endpoint:** `GET /albums`
 - **Response:** JSON array of all albums
 
+**Example:**
 ```bash
 curl http://localhost:8080/albums
 ```
@@ -59,6 +60,7 @@ curl http://localhost:8080/albums
 - **Endpoint:** `GET /albums/:id`
 - **Response:** JSON object of the album, or 404 if not found
 
+**Example:**
 ```bash
 curl http://localhost:8080/albums/1
 ```
@@ -71,6 +73,7 @@ curl http://localhost:8080/albums/1
 - **Request Body:** JSON object with `id`, `title`, `artist`, and `price`
 - **Response:** JSON object of the created album
 
+**Example:**
 ```bash
 curl -X POST -H "Content-Type: application/json" \
   -d '{"id": "4", "title": "The Beatles", "artist": "The Beatles", "price": 12.99}' \

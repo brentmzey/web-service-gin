@@ -1,9 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"log"
 	"net/http"
-
-	"github.com/gin-gonic/gin"
+	"strings"
 )
 
 // album represents data about a record album.
@@ -21,47 +22,60 @@ var albums = []album{
 	{ID: "3", Title: "Sarah Vaughan and Clifford Brown", Artist: "Sarah Vaughan", Price: 39.99},
 }
 
-// getAlbumByID locates the album whose ID value matches the id
-// parameter sent by the client, then returns that album as a response.
-func getAlbumByID(c *gin.Context) {
-	id := c.Param("id")
+// getAlbums responds with the list of all albums as JSON.
+func getAlbums(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(albums)
+}
 
-	// Loop over the list of albums, looking for
-	// an album whose ID value matches the parameter.
+// getAlbumByID locates the album whose ID matches the id parameter in the request.
+func getAlbumByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/albums/")
 	for _, a := range albums {
 		if a.ID == id {
-			c.IndentedJSON(http.StatusOK, a)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(a)
 			return
 		}
 	}
-	c.IndentedJSON(http.StatusNotFound, gin.H{"message": "album not found"})
-}
-
-// getAlbums responds with the list of all albums as JSON.
-func getAlbums(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, albums)
+	http.Error(w, `{"message":"album not found"}`, http.StatusNotFound)
 }
 
 // postAlbums adds an album from JSON received in the request body.
-func postAlbums(c *gin.Context) {
+func postAlbums(w http.ResponseWriter, r *http.Request) {
 	var newAlbum album
-
-	// Call BindJSON to bind the received JSON to
-	// newAlbum.
-	if err := c.BindJSON(&newAlbum); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&newAlbum); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	// Add the new album to the slice.
 	albums = append(albums, newAlbum)
-	c.IndentedJSON(http.StatusCreated, newAlbum)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(newAlbum)
+}
+
+func albumsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		getAlbums(w, r)
+	case http.MethodPost:
+		postAlbums(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func albumByIDHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		getAlbumByID(w, r)
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func main() {
-	router := gin.Default()
-	router.GET("/albums", getAlbums)
-	router.GET("/albums/:id", getAlbumByID)
-	router.POST("/albums", postAlbums)
-
-	router.Run("localhost:8080")
+	http.HandleFunc("/albums", albumsHandler)
+	http.HandleFunc("/albums/", albumByIDHandler)
+	log.Println("Listening on http://localhost:8080")
+	log.Fatal(http.ListenAndServe("localhost:8080", nil))
 }

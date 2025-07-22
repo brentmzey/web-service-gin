@@ -1,46 +1,43 @@
 # web-service-gin
 
-## Getting Started
+A simple RESTful web service for managing albums, built with [Gin](https://github.com/gin-gonic/gin) in Go.
 
-### Prerequisites
+## Features
 
-- Go 1.13+
+- List all albums
+- Retrieve a single album by ID
+- Add a new album
 
-### Installing
+## Prerequisites
+
+- Go 1.13 or newer
+
+## Installation
+
+Clone the repository and install dependencies:
 
 ```bash
-go get github.com/gin-gonic/gin
+git clone https://github.com/brentmzey/web-service-gin.git
+cd web-service-gin
+go mod tidy
 ```
 
-## Usage
+## Running the Service
 
-```go
-package main
+Start the server:
 
-import (
-	"net/http"
-
-	"github.com/gin-gonic/gin"
-)
-
-func main() {
-	router := gin.Default()
-	router.GET("/albums", func(c *gin.Context) {
-		c.IndentedJSON(http.StatusOK, gin.H{
-			"message": "Hello, World!",
-		})
-	})
-	
-	err := router.Run(":8080")
-	if err != nil {
-		panic(err)
-	}
-}
+```bash
+go run main.go
 ```
 
-## Example API calls
+The service will be available at [http://localhost:8080](http://localhost:8080).
+
+## API Endpoints
 
 ### Get all albums
+
+- **Endpoint:** `GET /albums`
+- **Response:** JSON array of all albums
 
 ```bash
 curl http://localhost:8080/albums
@@ -48,16 +45,41 @@ curl http://localhost:8080/albums
 
 ### Get album by ID
 
+- **Endpoint:** `GET /albums/:id`
+- **Response:** JSON object of the album, or 404 if not found
+
 ```bash
 curl http://localhost:8080/albums/1
 ```
 
-### Add album
+### Add a new album
+
+- **Endpoint:** `POST /albums`
+- **Request Body:** JSON object with `id`, `title`, `artist`, and `price`
+- **Response:** JSON object of the created album
 
 ```bash
-curl -X POST -H "Content-Type: application/json" -d '{"id": "4", "title": "The Beatles", "artist": "The Beatles", "price": 12.99}' http://localhost:8080/albums
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"id": "4", "title": "The Beatles", "artist": "The Beatles", "price": 12.99}' \
+  http://localhost:8080/albums
 ```
+
+## Example Album Object
+
+```json
+{
+  "id": "1",
+  "title": "Blue Train",
+  "artist": "John Coltrane",
+  "price": 56.99
+}
+```
+
+## Project Structure
+
+- [`main.go`](main.go): Main application source code
+- [`go.mod`](go.mod): Go module definition
 
 ## License
 
-MIT License - see the [LICENSE](LICENSE) file for details
+MIT License - see the [LICENSE](LICENSE) file for details.

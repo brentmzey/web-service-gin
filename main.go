@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // album represents data about a record album.
@@ -18,9 +20,9 @@ type album struct {
 
 // albums slice to seed record album data.
 var albums = []album{
-	{ID: "1", Title: "Blue Train", Artist: "John Coltrane", Price: 56.99},
-	{ID: "2", Title: "Jeru", Artist: "Gerry Mulligan", Price: 17.99},
-	{ID: "3", Title: "Sarah Vaughan and Clifford Brown", Artist: "Sarah Vaughan", Price: 39.99},
+	{ID: uuid.New().String(), Title: "Blue Train", Artist: "John Coltrane", Price: 56.99},
+	{ID: uuid.New().String(), Title: "Jeru", Artist: "Gerry Mulligan", Price: 17.99},
+	{ID: uuid.New().String(), Title: "Sarah Vaughan and Clifford Brown", Artist: "Sarah Vaughan", Price: 39.99},
 }
 
 // writeJSON writes pretty JSON with status code and logs errors if any.
@@ -77,13 +79,25 @@ func getAlbumByID(w http.ResponseWriter, r *http.Request) {
 
 // postAlbums adds an album from JSON received in the request body.
 func postAlbums(w http.ResponseWriter, r *http.Request) {
-	var newAlbum album
+	var newAlbum struct {
+		Title  string  `json:"title"`
+		Artist string  `json:"artist"`
+		Price  float64 `json:"price"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&newAlbum); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
 	}
-	albums = append(albums, newAlbum)
-	writeJSON(w, http.StatusCreated, newAlbum)
+
+	album := album{
+		ID:     uuid.New().String(),
+		Title:  newAlbum.Title,
+		Artist: newAlbum.Artist,
+		Price:  newAlbum.Price,
+	}
+
+	albums = append(albums, album)
+	writeJSON(w, http.StatusCreated, album)
 }
 
 func albumsHandler(w http.ResponseWriter, r *http.Request) {

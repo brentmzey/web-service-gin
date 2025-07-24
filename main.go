@@ -34,6 +34,15 @@ var albums = []album{
 	{ID: uuid.New().String(), Title: "In the Wee Small Hours", Artist: "Frank Sinatra", Price: 12.99},
 }
 
+// clientInfo holds request tracking information.
+type clientInfo struct {
+	lastRequest  time.Time
+	requestCount int
+}
+
+// clients map maintains client request info.
+var clients = make(map[string]*clientInfo)
+
 // writeJSON writes pretty JSON with status code and logs errors if any.
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -67,6 +76,32 @@ type loggingResponseWriter struct {
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
 	lrw.statusCode = code
 	lrw.ResponseWriter.WriteHeader(code)
+}
+
+// rateLimitingMiddleware enforces rate limits on requests.
+func rateLimitingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clientIP := r.RemoteAddr
+
+		if info, exists := clients[clientIP]; exists {
+			if time.Since(info.lastRequest) < 15*time.Second {
+				info.requestCount++
+				if info.requestCount > 5 {
+					waitTime := time.Duration(1<<info.requestCount) * time.Second
+					http.Error(w, "Too many requests, please wait a bit", http.StatusTooManyRequests)
+					log.Printf("⏳ Rate limit exceeded for %s, waiting %v", clientIP, waitTime)
+					return
+				}
+			} else {
+				info.requestCount = 1
+			}
+			info.lastRequest = time.Now()
+		} else {
+			clients[clientIP] = &clientInfo{requestCount: 1, lastRequest: time.Now()}
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // getAlbums responds with the list of all albums as pretty JSON.
@@ -140,5 +175,7 @@ func main() {
 	mux.HandleFunc("/albums", albumsHandler)
 	mux.HandleFunc("/albums/", albumByIDHandler)
 	log.Println("🎧 Listening on http://localhost:8080")
-	log.Fatal(http.ListenAndServe("localhost:8080", loggingMiddleware(mux)))
+
+	wrappedMux := loggingMiddleware(rateLimitingMiddleware(mux))
+	log.Fatal(http.ListenAndServe("localhost:8080", wrappedMux))
 }

@@ -11,6 +11,7 @@ A simple RESTful web service for managing albums, built with Go's standard `net/
 - Add a new album with unique UUID generation
 - Pretty/indented JSON responses
 - Request logging with method, path, status, and duration
+- **Rate limiting with exponential backoff** for repeated requests
 
 ---
 
@@ -41,6 +42,26 @@ go run main.go
 ```
 
 The service will be available at [http://localhost:8080](http://localhost:8080).
+
+---
+
+## Rate Limiting & Exponential Backoff
+
+This service includes a **rate limiting middleware**. If a client (by IP address) makes more than 5 requests within 15 seconds, further requests are rejected with HTTP 429 ("Too Many Requests"). The rejection is logged, and the suggested wait time increases exponentially (using a backoff algorithm: `waitTime = 2^requestCount` seconds).
+
+**Example log output:**
+
+```
+⏳ Rate limit exceeded for 127.0.0.1:54321, waiting 64s
+```
+
+**Example response:**
+
+```json
+{
+  "message": "Too many requests, please wait a bit"
+}
+```
 
 ---
 
@@ -225,6 +246,7 @@ curl -s http://localhost:8080/albums | jq '.[].id'
 - Generates unique IDs for new albums using `github.com/google/uuid`.
 - Uses a custom `writeJSON` function for pretty JSON output.
 - Adds a logging middleware to log each request's method, path, status, and duration.
+- **Implements rate limiting with exponential backoff**: If a client exceeds 5 requests in 15 seconds, further requests are blocked and the suggested wait time increases exponentially.
 - Uses only Go's standard library (`net/http`, `encoding/json`, etc).
 
 ---

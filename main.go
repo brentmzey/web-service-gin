@@ -43,6 +43,18 @@ type clientInfo struct {
 // clients map maintains client request info.
 var clients = make(map[string]*clientInfo)
 
+// Metrics holds telemetry data for the app.
+type Metrics struct {
+	TotalRequests      int64
+	TotalErrors        int64
+	TotalAlbumsFetched int64
+	TotalAlbumsAdded   int64
+	TotalRateLimited   int64
+	TotalLatencyMs     int64
+}
+
+var metrics = &Metrics{}
+
 // writeJSON writes pretty JSON with status code and logs errors if any.
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -78,6 +90,40 @@ func (lrw *loggingResponseWriter) WriteHeader(code int) {
 	lrw.ResponseWriter.WriteHeader(code)
 }
 
+// metricsMiddleware tracks requests, errors, and latency.
+func metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		metrics.TotalRequests++
+		lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(lrw, r)
+		latency := time.Since(start).Milliseconds()
+		metrics.TotalLatencyMs += latency
+		if lrw.statusCode >= 400 {
+			metrics.TotalErrors++
+		}
+	})
+}
+
+// metricsHandler exposes metrics as JSON.
+func metricsHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"total_requests":       metrics.TotalRequests,
+		"total_errors":         metrics.TotalErrors,
+		"total_albums_fetched": metrics.TotalAlbumsFetched,
+		"total_albums_added":   metrics.TotalAlbumsAdded,
+		"total_rate_limited":   metrics.TotalRateLimited,
+		"average_latency_ms":   avgLatency(),
+	})
+}
+
+func avgLatency() int64 {
+	if metrics.TotalRequests == 0 {
+		return 0
+	}
+	return metrics.TotalLatencyMs / metrics.TotalRequests
+}
+
 // rateLimitingMiddleware enforces rate limits on requests.
 func rateLimitingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +134,7 @@ func rateLimitingMiddleware(next http.Handler) http.Handler {
 				info.requestCount++
 				if info.requestCount > 5 {
 					waitTime := time.Duration(1<<info.requestCount) * time.Second
+					metrics.TotalRateLimited++
 					http.Error(w, "Too many requests, please wait a bit", http.StatusTooManyRequests)
 					log.Printf("⏳ Rate limit exceeded for %s, waiting %v", clientIP, waitTime)
 					return
@@ -106,6 +153,7 @@ func rateLimitingMiddleware(next http.Handler) http.Handler {
 
 // getAlbums responds with the list of all albums as pretty JSON.
 func getAlbums(w http.ResponseWriter, r *http.Request) {
+	metrics.TotalAlbumsFetched++
 	writeJSON(w, http.StatusOK, albums)
 	log.Println("🎶 Fetched all albums")
 }
@@ -145,6 +193,7 @@ func postAlbums(w http.ResponseWriter, r *http.Request) {
 	}
 
 	albums = append(albums, album)
+	metrics.TotalAlbumsAdded++
 	writeJSON(w, http.StatusCreated, album)
 	log.Printf("✨ New album added: %s by %s", album.Title, album.Artist)
 }
@@ -174,8 +223,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/albums", albumsHandler)
 	mux.HandleFunc("/albums/", albumByIDHandler)
+	mux.HandleFunc("/metrics", metricsHandler) // Add metrics endpoint
 	log.Println("🎧 Listening on http://localhost:8080")
 
-	wrappedMux := loggingMiddleware(rateLimitingMiddleware(mux))
+	wrappedMux := metricsMiddleware(loggingMiddleware(rateLimitingMiddleware(mux)))
 	log.Fatal(http.ListenAndServe("localhost:8080", wrappedMux))
 }

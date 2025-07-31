@@ -12,6 +12,8 @@ A simple RESTful web service for managing albums, built with Go's standard `net/
 - Pretty/indented JSON responses
 - Request logging with method, path, status, and duration
 - **Rate limiting with exponential backoff** for repeated requests
+- **Metrics endpoint** for basic telemetry
+- **Easy local executable path management with [direnv](https://direnv.net/)**
 
 ---
 
@@ -33,12 +35,57 @@ go get github.com/google/uuid
 
 ---
 
+## Building the Executable
+
+To build the project and place the executable in the `bin` directory:
+
+```bash
+./build.sh
+```
+
+This will create (or update) `bin/web-service-go`.
+
+---
+
+## Adding `bin` to your PATH with direnv
+
+This project includes a `.envrc` file for use with [direnv](https://direnv.net/).  
+When you `cd` into the project directory, direnv will automatically add `bin` to your `PATH`, so you can run the built executable from anywhere in the project.
+
+### Setup
+
+1. **Install direnv** (if not already):
+
+   ```bash
+   brew install direnv
+   ```
+
+2. **Hook direnv into your shell** (if not already):
+
+   Follow the instructions from `direnv hook <your-shell>` as shown in the [direnv docs](https://direnv.net/docs/hook.html).
+
+3. **Allow the `.envrc` file** (in the project root):
+
+   ```bash
+   direnv allow
+   ```
+
+Now, every time you enter this directory, `bin` will be in your `PATH`.
+
+---
+
 ## Running the Service
 
 Start the server:
 
 ```bash
 go run main.go
+```
+
+Or, after building:
+
+```bash
+web-service-go
 ```
 
 The service will be available at [http://localhost:8080](http://localhost:8080).
@@ -234,6 +281,8 @@ curl -s http://localhost:8080/albums | jq '.[].id'
 
 - `main.go`: Main application source code
 - `go.mod`: Go module definition
+- `build.sh`: Build script to create the executable in `bin/`
+- `.envrc`: [direnv](https://direnv.net/) config to add `bin` to your `PATH`
 
 ---
 
@@ -247,6 +296,7 @@ curl -s http://localhost:8080/albums | jq '.[].id'
 - Uses a custom `writeJSON` function for pretty JSON output.
 - Adds a logging middleware to log each request's method, path, status, and duration.
 - **Implements rate limiting with exponential backoff**: If a client exceeds 5 requests in 15 seconds, further requests are blocked and the suggested wait time increases exponentially.
+- **Metrics middleware and endpoint**: Tracks requests, errors, albums fetched/added, rate-limited requests, and latency.
 - Uses only Go's standard library (`net/http`, `encoding/json`, etc).
 
 ---

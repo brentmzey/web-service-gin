@@ -1,13 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v4" // PostgreSQL
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"gorm.io/driver/sqlite" // SQLite
+	"gorm.io/gorm"          // ORM for SQLite
 )
 
 // album represents data about a record album.
@@ -18,32 +27,20 @@ type album struct {
 	Price  float64 `json:"price"`
 }
 
-// albums slice to seed record album data with more entries.
 var albums = []album{
 	{ID: uuid.New().String(), Title: "Blue Train", Artist: "John Coltrane", Price: 56.99},
 	{ID: uuid.New().String(), Title: "Jeru", Artist: "Gerry Mulligan", Price: 17.99},
 	{ID: uuid.New().String(), Title: "Sarah Vaughan and Clifford Brown", Artist: "Sarah Vaughan", Price: 39.99},
-	{ID: uuid.New().String(), Title: "The Dark Side of the Moon", Artist: "Pink Floyd", Price: 22.99},
-	{ID: uuid.New().String(), Title: "Abbey Road", Artist: "The Beatles", Price: 29.99},
-	{ID: uuid.New().String(), Title: "Kind of Blue", Artist: "Miles Davis", Price: 9.99},
-	{ID: uuid.New().String(), Title: "Back to Black", Artist: "Amy Winehouse", Price: 19.99},
-	{ID: uuid.New().String(), Title: "Nevermind", Artist: "Nirvana", Price: 15.99},
-	{ID: uuid.New().String(), Title: "The Wall", Artist: "Pink Floyd", Price: 25.99},
-	{ID: uuid.New().String(), Title: "Rumours", Artist: "Fleetwood Mac", Price: 18.99},
-	{ID: uuid.New().String(), Title: "A Love Supreme", Artist: "John Coltrane", Price: 19.99},
-	{ID: uuid.New().String(), Title: "In the Wee Small Hours", Artist: "Frank Sinatra", Price: 12.99},
+	// Add more albums...
 }
 
-// clientInfo holds request tracking information.
 type clientInfo struct {
 	lastRequest  time.Time
 	requestCount int
 }
 
-// clients map maintains client request info.
 var clients = make(map[string]*clientInfo)
 
-// Metrics holds telemetry data for the app.
 type Metrics struct {
 	TotalRequests      int64
 	TotalErrors        int64
@@ -55,7 +52,99 @@ type Metrics struct {
 
 var metrics = &Metrics{}
 
-// writeJSON writes pretty JSON with status code and logs errors if any.
+type MetricsStore interface {
+	SaveMetrics(metrics Metrics) error
+	LoadMetrics() (Metrics, error)
+}
+
+type InMemoryMetricsStore struct {
+	metrics Metrics
+}
+
+func (store *InMemoryMetricsStore) SaveMetrics(metrics Metrics) error {
+	store.metrics = metrics
+	return nil
+}
+
+func (store *InMemoryMetricsStore) LoadMetrics() (Metrics, error) {
+	return store.metrics, nil
+}
+
+// PostgresMetricsStore is a basic outline for future implementation
+type PostgresMetricsStore struct {
+	conn *pgx.Conn
+}
+
+func NewPostgresMetricsStore(conn *pgx.Conn) *PostgresMetricsStore {
+	return &PostgresMetricsStore{conn: conn}
+}
+
+func (store *PostgresMetricsStore) SaveMetrics(metrics Metrics) error {
+	// Implement PostgreSQL saving logic
+	return nil
+}
+
+func (store *PostgresMetricsStore) LoadMetrics() (Metrics, error) {
+	// Implement PostgreSQL loading logic
+	return Metrics{}, nil
+}
+
+// Implement similar structures for SQLite, MongoDB, and DynamoDB
+
+type SqliteMetricsStore struct {
+	db *gorm.DB
+}
+
+func NewSqliteMetricsStore(db *gorm.DB) *SqliteMetricsStore {
+	return &SqliteMetricsStore{db: db}
+}
+
+func (store *SqliteMetricsStore) SaveMetrics(metrics Metrics) error {
+	// Implement SQLite saving logic
+	return nil
+}
+
+func (store *SqliteMetricsStore) LoadMetrics() (Metrics, error) {
+	// Implement SQLite loading logic
+	return Metrics{}, nil
+}
+
+type MongoMetricsStore struct {
+	collection *mongo.Collection
+}
+
+func NewMongoMetricsStore(collection *mongo.Collection) *MongoMetricsStore {
+	return &MongoMetricsStore{collection: collection}
+}
+
+func (store *MongoMetricsStore) SaveMetrics(metrics Metrics) error {
+	// Implement MongoDB saving logic
+	return nil
+}
+
+func (store *MongoMetricsStore) LoadMetrics() (Metrics, error) {
+	// Implement MongoDB loading logic
+	return Metrics{}, nil
+}
+
+type DynamoMetricsStore struct {
+	session *dynamodb.DynamoDB
+}
+
+func NewDynamoMetricsStore(sess *dynamodb.DynamoDB) *DynamoMetricsStore {
+	return &DynamoMetricsStore{session: sess}
+}
+
+func (store *DynamoMetricsStore) SaveMetrics(metrics Metrics) error {
+	// Implement DynamoDB saving logic
+	return nil
+}
+
+func (store *DynamoMetricsStore) LoadMetrics() (Metrics, error) {
+	// Implement DynamoDB loading logic
+	return Metrics{}, nil
+}
+
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -68,7 +157,6 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Write(js)
 }
 
-// loggingMiddleware logs method, path, status, and duration for each request with emojis.
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -79,7 +167,6 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// loggingResponseWriter captures status code for logging.
 type loggingResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
@@ -90,7 +177,6 @@ func (lrw *loggingResponseWriter) WriteHeader(code int) {
 	lrw.ResponseWriter.WriteHeader(code)
 }
 
-// metricsMiddleware tracks requests, errors, and latency.
 func metricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -105,15 +191,14 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// metricsHandler exposes metrics as JSON.
 func metricsHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"total_requests":       metrics.TotalRequests,
-		"total_errors":         metrics.TotalErrors,
-		"total_albums_fetched": metrics.TotalAlbumsFetched,
-		"total_albums_added":   metrics.TotalAlbumsAdded,
-		"total_rate_limited":   metrics.TotalRateLimited,
-		"average_latency_ms":   avgLatency(),
+		"totalRequests":      metrics.TotalRequests,
+		"totalErrors":        metrics.TotalErrors,
+		"totalAlbumsFetched": metrics.TotalAlbumsFetched,
+		"totalAlbumsAdded":   metrics.TotalAlbumsAdded,
+		"totalRateLimited":   metrics.TotalRateLimited,
+		"averageLatencyMs":   avgLatency(),
 	})
 }
 
@@ -124,11 +209,9 @@ func avgLatency() int64 {
 	return metrics.TotalLatencyMs / metrics.TotalRequests
 }
 
-// rateLimitingMiddleware enforces rate limits on requests.
 func rateLimitingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientIP := r.RemoteAddr
-
 		if info, exists := clients[clientIP]; exists {
 			if time.Since(info.lastRequest) < 15*time.Second {
 				info.requestCount++
@@ -146,19 +229,16 @@ func rateLimitingMiddleware(next http.Handler) http.Handler {
 		} else {
 			clients[clientIP] = &clientInfo{requestCount: 1, lastRequest: time.Now()}
 		}
-
 		next.ServeHTTP(w, r)
 	})
 }
 
-// getAlbums responds with the list of all albums as pretty JSON.
 func getAlbums(w http.ResponseWriter, r *http.Request) {
 	metrics.TotalAlbumsFetched++
 	writeJSON(w, http.StatusOK, albums)
 	log.Println("🎶 Fetched all albums")
 }
 
-// getAlbumByID locates the album whose ID matches the id parameter in the request.
 func getAlbumByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/albums/")
 	for _, a := range albums {
@@ -172,7 +252,6 @@ func getAlbumByID(w http.ResponseWriter, r *http.Request) {
 	log.Println("❌ Album not found")
 }
 
-// postAlbums adds an album from JSON received in the request body.
 func postAlbums(w http.ResponseWriter, r *http.Request) {
 	var newAlbum struct {
 		Title  string  `json:"title"`
@@ -219,11 +298,48 @@ func albumByIDHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func setupMetricsStore() MetricsStore {
+	dbType := os.Getenv("DB_TYPE")
+	switch dbType {
+	case "postgres":
+		conn, err := pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+		if err != nil {
+			log.Fatalf("Unable to connect to database: %v", err)
+		}
+		return NewPostgresMetricsStore(conn)
+
+	case "sqlite":
+		db, err := gorm.Open(sqlite.Open("file:metrics.db?cache=shared&_fk=1"), &gorm.Config{})
+		if err != nil {
+			log.Fatalf("Failed to connect to SQLite database: %v", err)
+		}
+		return NewSqliteMetricsStore(db)
+
+	case "mongodb":
+		client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI("mongodb://localhost:27017"))
+		if err != nil {
+			log.Fatalf("Failed to connect to MongoDB: %v", err)
+		}
+		return NewMongoMetricsStore(client.Database("metricsDb").Collection("metrics"))
+
+	case "dynamodb":
+		sess := session.Must(session.NewSession())
+		svc := dynamodb.New(sess)
+		return NewDynamoMetricsStore(svc)
+
+	default:
+		return &InMemoryMetricsStore{}
+	}
+}
+
+var metricsStore MetricsStore
+
 func main() {
+	metricsStore = setupMetricsStore()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/albums", albumsHandler)
 	mux.HandleFunc("/albums/", albumByIDHandler)
-	mux.HandleFunc("/metrics", metricsHandler) // Add metrics endpoint
+	mux.HandleFunc("/metrics", metricsHandler)
 	log.Println("🎧 Listening on http://localhost:8080")
 
 	wrappedMux := metricsMiddleware(loggingMiddleware(rateLimitingMiddleware(mux)))
